@@ -3,6 +3,7 @@ import pandas as pd
 import time
 from model import get_embeddings
 from utils import find_duplicates_faiss
+from translator import translate_batch
 
 st.set_page_config(page_title="Duplicate Detector", layout="wide")
 
@@ -21,20 +22,17 @@ if uploaded_file:
     progress.progress(10, text="📂 File loaded")
 
     st.subheader("📊 Data Preview")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df.head(500), use_container_width=True)
 
     # Column handling
     if 'text' in df.columns:
-        texts = df['text'].tolist()
         text_col = 'text'
     else:
         text_col = df.columns[1]
-        texts = df[text_col].tolist()
 
-    # Normalize
-    texts = [str(t).lower().strip() for t in texts]
+    texts = df[text_col].astype(str).str.lower().str.strip().tolist()
 
-    # 🔄 Embedding
+    # 🔄 Embeddings
     embed_start = time.time()
     with st.spinner("🔄 Generating embeddings..."):
         embeddings = get_embeddings(texts)
@@ -62,21 +60,18 @@ if uploaded_file:
 
     st.divider()
 
-    # 🔍 Only duplicates (sorted)
-    duplicates = df[df['group_count'] > 1].copy()
-    duplicates = duplicates.sort_values(by='group')
+    # 🔍 Duplicate records only
+    duplicates = df[df['group_count'] > 1].copy().sort_values(by='group')
 
     st.subheader("🔍 Duplicate Records Only")
-    st.dataframe(duplicates, use_container_width=True)
+    st.dataframe(duplicates.head(1000), use_container_width=True)
 
     st.divider()
 
-    # 🔎 GROUP EXPLORER (FIXED)
+    # 🔎 GROUP EXPLORER
     st.subheader("🔎 Explore Duplicate Groups")
 
     if len(duplicates) > 0:
-
-        # ✅ SORTED + ALL GROUPS
         group_ids = sorted(duplicates['group'].unique())
 
         selected_group = st.selectbox("Select a group", group_ids)
@@ -86,18 +81,14 @@ if uploaded_file:
         st.write(f"### 📂 Group {selected_group} ({len(group_data)} items)")
         st.dataframe(group_data, use_container_width=True)
 
-        # 🧠 CLEAN COMPARISON VIEW
+        # 🧠 Comparison View (limited for performance)
         st.write("### 🧠 Comparison View")
 
         texts_in_group = group_data[text_col].tolist()
 
-        seen = set()
-        for i in range(len(texts_in_group)):
-            for j in range(i + 1, len(texts_in_group)):
-                pair = tuple(sorted((texts_in_group[i], texts_in_group[j])))
-                if pair not in seen:
-                    st.write(f"• {pair[0]}  ↔  {pair[1]}")
-                    seen.add(pair)
+        for i in range(min(3, len(texts_in_group))):
+            for j in range(i + 1, min(3, len(texts_in_group))):
+                st.write(f"• {texts_in_group[i]}  ↔  {texts_in_group[j]}")
 
     else:
         st.info("No duplicate groups found.")
@@ -114,7 +105,7 @@ if uploaded_file:
     col2.metric("🔍 Detection Time", f"{faiss_done - faiss_start:.2f}s")
     col3.metric("⏱️ Total Time", f"{total_time:.2f}s")
 
-    # 📥 Download
+    # 📥 Download original results
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Download Results CSV",
@@ -124,4 +115,76 @@ if uploaded_file:
     )
 
     st.success("🚀 Duplicate detection completed successfully!")
-    
+
+    # 🌐 TRANSLATION FEATURE
+    st.divider()
+    st.subheader("🌐 Translate Dataset")
+
+    lang_map = {
+        "English": "en",
+        "Hindi": "hi",
+        "Japanese": "ja",
+        "French": "fr",
+        "German": "de",
+        "Spanish": "es"
+    }
+
+    selected_lang = st.selectbox(
+        "Select target language",
+        list(lang_map.keys())
+    )
+
+    max_rows = st.slider(
+        "Limit rows for translation (demo safe)",
+        min_value=1,
+        max_value=len(df),
+        value=min(300, len(df))
+    )
+
+    if st.button("🌐 Translate Dataset"):
+
+        st.warning("⚠️ Translating... Large datasets may take time")
+
+        sample_df = df.head(max_rows).copy()
+
+        translated_texts = translate_batch(
+            sample_df[text_col].astype(str).tolist(),
+            lang_map[selected_lang]
+        )
+
+        sample_df[f"translated_{selected_lang.lower()}"] = translated_texts
+
+        st.success("✅ Translation completed!")
+
+        st.dataframe(sample_df, use_container_width=True)
+
+        csv_trans = sample_df.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            label=f"📥 Download {selected_lang} Version",
+            data=csv_trans,
+            file_name=f"translated_{selected_lang.lower()}.csv",
+            mime="text/csv"
+        )
+
+    # 🧹 CLEAN DATASET BUTTON (NEW FEATURE)
+    st.divider()
+    st.subheader("🧹 Clean Dataset")
+
+    if st.button("🧹 Generate Production-Ready Dataset"):
+
+        clean_df = df.drop_duplicates(subset=['group']).copy()
+        clean_df = clean_df.drop(columns=['group', 'group_count'])
+
+        st.success("✅ Clean dataset generated!")
+
+        st.dataframe(clean_df.head(1000), use_container_width=True)
+
+        csv_clean = clean_df.to_csv(index=False).encode('utf-8')
+
+        st.download_button(
+            label="📥 Download Clean Dataset",
+            data=csv_clean,
+            file_name="clean_dataset.csv",
+            mime="text/csv"
+        )
