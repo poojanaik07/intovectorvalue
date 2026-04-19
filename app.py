@@ -5,6 +5,15 @@ from model import get_embeddings
 from utils import find_duplicates_faiss
 from translator import translate_batch
 
+# ⚡ CACHING (VERY IMPORTANT)
+@st.cache_data
+def cached_embeddings(texts):
+    return get_embeddings(texts)
+
+@st.cache_data
+def cached_groups(embeddings):
+    return find_duplicates_faiss(embeddings)
+
 st.set_page_config(page_title="Duplicate Detector", layout="wide")
 
 st.title("🌍 Multilingual Duplicate Detector")
@@ -35,14 +44,14 @@ if uploaded_file:
     # 🔄 Embeddings
     embed_start = time.time()
     with st.spinner("🔄 Generating embeddings..."):
-        embeddings = get_embeddings(texts)
+        embeddings = cached_embeddings(texts)
     embed_done = time.time()
     progress.progress(60, text="🧠 Embeddings ready")
 
     # 🔍 Duplicate detection
     faiss_start = time.time()
     with st.spinner("🔍 Finding duplicates..."):
-        labels = find_duplicates_faiss(embeddings)
+        labels = cached_groups(embeddings)
     faiss_done = time.time()
     progress.progress(90, text="🔍 Groups created")
 
