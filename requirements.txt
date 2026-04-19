@@ -5,3 +5,4 @@ sentence-transformers
 faiss-cpu
 torch
 torchvision
+deep-translator
