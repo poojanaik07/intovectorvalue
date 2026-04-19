@@ -14,7 +14,11 @@ uploaded_file = st.file_uploader("📂 Upload CSV", type=["csv"])
 if uploaded_file:
     start_time = time.time()
 
+    # 🔥 Progress Bar
+    progress = st.progress(0, text="🚀 Starting...")
+
     df = pd.read_csv(uploaded_file)
+    progress.progress(10, text="📂 File loaded")
 
     st.subheader("📊 Data Preview")
     st.dataframe(df, use_container_width=True)
@@ -35,12 +39,14 @@ if uploaded_file:
     with st.spinner("🔄 Generating embeddings..."):
         embeddings = get_embeddings(texts)
     embed_done = time.time()
+    progress.progress(60, text="🧠 Embeddings ready")
 
     # 🔍 Duplicate detection
     faiss_start = time.time()
     with st.spinner("🔍 Finding duplicates..."):
         labels = find_duplicates_faiss(embeddings)
     faiss_done = time.time()
+    progress.progress(90, text="🔍 Groups created")
 
     df['group'] = labels
     df['group_count'] = df.groupby('group')['group'].transform('count')
@@ -56,19 +62,22 @@ if uploaded_file:
 
     st.divider()
 
-    # 🔍 Only duplicates
-    duplicates = df[df['group_count'] > 1]
+    # 🔍 Only duplicates (sorted)
+    duplicates = df[df['group_count'] > 1].copy()
+    duplicates = duplicates.sort_values(by='group')
 
     st.subheader("🔍 Duplicate Records Only")
-    st.dataframe(duplicates.sort_values('group'), use_container_width=True)
+    st.dataframe(duplicates, use_container_width=True)
 
     st.divider()
 
-    # 🔎 GROUP EXPLORER (🔥 KEY FEATURE)
+    # 🔎 GROUP EXPLORER (FIXED)
     st.subheader("🔎 Explore Duplicate Groups")
 
     if len(duplicates) > 0:
-        group_ids = duplicates['group'].unique()[:20]  # limit for performance
+
+        # ✅ SORTED + ALL GROUPS
+        group_ids = sorted(duplicates['group'].unique())
 
         selected_group = st.selectbox("Select a group", group_ids)
 
@@ -77,16 +86,23 @@ if uploaded_file:
         st.write(f"### 📂 Group {selected_group} ({len(group_data)} items)")
         st.dataframe(group_data, use_container_width=True)
 
-        # 🧠 COMPARISON VIEW (WOW)
+        # 🧠 CLEAN COMPARISON VIEW
         st.write("### 🧠 Comparison View")
 
         texts_in_group = group_data[text_col].tolist()
 
+        seen = set()
         for i in range(len(texts_in_group)):
             for j in range(i + 1, len(texts_in_group)):
-                st.write(f"• {texts_in_group[i]}  ↔  {texts_in_group[j]}")
+                pair = tuple(sorted((texts_in_group[i], texts_in_group[j])))
+                if pair not in seen:
+                    st.write(f"• {pair[0]}  ↔  {pair[1]}")
+                    seen.add(pair)
+
     else:
         st.info("No duplicate groups found.")
+
+    progress.progress(100, text="✅ Done!")
 
     st.divider()
 
@@ -98,7 +114,7 @@ if uploaded_file:
     col2.metric("🔍 Detection Time", f"{faiss_done - faiss_start:.2f}s")
     col3.metric("⏱️ Total Time", f"{total_time:.2f}s")
 
-    # 📥 Download results
+    # 📥 Download
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Download Results CSV",
@@ -108,3 +124,4 @@ if uploaded_file:
     )
 
     st.success("🚀 Duplicate detection completed successfully!")
+    
