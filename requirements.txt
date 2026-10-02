@@ -6,3 +6,6 @@ faiss-cpu
 torch
 torchvision
 deep-translator
+plotly
+translators
+statsmodels
